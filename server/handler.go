@@ -1424,7 +1424,7 @@ func (h *jobsInsertHandler) Handle(ctx context.Context, r *jobsInsertRequest) (*
 			if err := r.server.contentRepo.AddTableData(ctx, tx, tableRef.ProjectId, tableRef.DatasetId, tableDef); err != nil {
 				return nil, fmt.Errorf("failed to add table data: %w", err)
 			}
-		} else if response.TotalRows > 0 {
+		} else {
 			if err := h.addQueryResultToDynamicDestinationTable(ctx, tx, r, response); err != nil {
 				return nil, fmt.Errorf("failed to add query result to dynamic destination table: %w", err)
 			}

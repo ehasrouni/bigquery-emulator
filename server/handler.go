@@ -1369,6 +1369,10 @@ func (h *jobsInsertHandler) exportToGCSWithObject(ctx context.Context, response 
 }
 
 func (h *jobsInsertHandler) Handle(ctx context.Context, r *jobsInsertRequest) (*bigqueryv2.Job, error) {
+	var datasetID string
+	if r.queryRequest.DefaultDataset != nil {
+		datasetID = r.queryRequest.DefaultDataset.DatasetId
+	}
 	job := r.job
 	if job.Configuration == nil {
 		return nil, fmt.Errorf("unspecified job configuration")
@@ -1405,7 +1409,7 @@ func (h *jobsInsertHandler) Handle(ctx context.Context, r *jobsInsertRequest) (*
 		ctx,
 		tx,
 		r.project.ID,
-		"",
+		datasetID,
 		job.Configuration.Query.Query,
 		job.Configuration.Query.QueryParameters,
 	)

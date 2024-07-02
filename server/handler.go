@@ -1369,10 +1369,6 @@ func (h *jobsInsertHandler) exportToGCSWithObject(ctx context.Context, response 
 }
 
 func (h *jobsInsertHandler) Handle(ctx context.Context, r *jobsInsertRequest) (*bigqueryv2.Job, error) {
-	var datasetID string
-	if r.queryRequest.DefaultDataset != nil {
-		datasetID = r.queryRequest.DefaultDataset.DatasetId
-	}
 	job := r.job
 	if job.Configuration == nil {
 		return nil, fmt.Errorf("unspecified job configuration")
@@ -1405,11 +1401,13 @@ func (h *jobsInsertHandler) Handle(ctx context.Context, r *jobsInsertRequest) (*
 	defer tx.RollbackIfNotCommitted()
 	hasDestinationTable := job.Configuration.Query.DestinationTable != nil
 	startTime := time.Now()
+	extract := r.job.Configuration.Extract
+	sourceTable := extract.SourceTable
 	response, jobErr := r.server.contentRepo.Query(
 		ctx,
 		tx,
 		r.project.ID,
-		datasetID,
+		sourceTable.DatasetId,
 		job.Configuration.Query.Query,
 		job.Configuration.Query.QueryParameters,
 	)
@@ -1428,7 +1426,7 @@ func (h *jobsInsertHandler) Handle(ctx context.Context, r *jobsInsertRequest) (*
 			if err := r.server.contentRepo.AddTableData(ctx, tx, tableRef.ProjectId, tableRef.DatasetId, tableDef); err != nil {
 				return nil, fmt.Errorf("failed to add table data: %w", err)
 			}
-		} else {
+		} else if response.TotalRows > 0 {
 			if err := h.addQueryResultToDynamicDestinationTable(ctx, tx, r, response); err != nil {
 				return nil, fmt.Errorf("failed to add query result to dynamic destination table: %w", err)
 			}

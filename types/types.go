@@ -38,6 +38,12 @@ func (t *Table) ToBigqueryV2(projectID, datasetID string) *bigqueryv2.Table {
 		fields[i] = col.TableFieldSchema()
 	}
 	now := time.Now().Unix()
+
+	var tableSchema *bigqueryv2.TableSchema = nil
+	if fields != nil && len(fields) > 0 {
+		tableSchema = &bigqueryv2.TableSchema{Fields: fields}
+	}
+
 	return &bigqueryv2.Table{
 		Type: "TABLE",
 		Kind: "bigquery#table",
@@ -47,9 +53,7 @@ func (t *Table) ToBigqueryV2(projectID, datasetID string) *bigqueryv2.Table {
 			DatasetId: datasetID,
 			TableId:   t.ID,
 		},
-		Schema: &bigqueryv2.TableSchema{
-			Fields: fields,
-		},
+		Schema:           tableSchema,
 		NumRows:          uint64(len(t.Data)),
 		CreationTime:     now,
 		LastModifiedTime: uint64(now),

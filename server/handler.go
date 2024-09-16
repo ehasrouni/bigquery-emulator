@@ -1402,11 +1402,15 @@ func (h *jobsInsertHandler) Handle(ctx context.Context, r *jobsInsertRequest) (*
 	defer tx.RollbackIfNotCommitted()
 	hasDestinationTable := job.Configuration.Query.DestinationTable != nil
 	startTime := time.Now()
+	var defaultDataset = ""
+	if job.Configuration.Query.DefaultDataset != nil {
+		defaultDataset = job.Configuration.Query.DefaultDataset.DatasetId
+	}
 	response, jobErr := r.server.contentRepo.Query(
 		ctx,
 		tx,
 		r.project.ID,
-		"",
+		defaultDataset,
 		job.Configuration.Query.Query,
 		job.Configuration.Query.QueryParameters,
 	)
@@ -1444,6 +1448,45 @@ func (h *jobsInsertHandler) Handle(ctx context.Context, r *jobsInsertRequest) (*
 		} else if response.TotalRows > 0 {
 			if err := h.addQueryResultToDynamicDestinationTable(ctx, tx, r, response); err != nil {
 				return nil, fmt.Errorf("failed to add query result to dynamic destination table: %w", err)
+			}
+		} else {
+			projectID := r.project.ID
+			jobID := r.job.JobReference.JobId
+			datasetID := "ds_" + jobID
+			tableID := jobID
+
+			table := metadata.NewTable(r.server.metaRepo, projectID, datasetID, tableID, nil)
+			dataset := metadata.NewDataset(
+				r.server.metaRepo,
+				r.project.ID,
+				datasetID,
+				&bigqueryv2.Dataset{
+					Id: fmt.Sprintf("%s:%s", projectID, datasetID),
+					DatasetReference: &bigqueryv2.DatasetReference{
+						ProjectId: projectID,
+						DatasetId: datasetID,
+					},
+				},
+				[]*metadata.Table{table},
+				nil,
+				nil,
+			)
+
+			if err := r.project.AddDataset(ctx, tx.Tx(), dataset); err != nil {
+				return nil, err
+			}
+			if err := r.server.metaRepo.AddTable(ctx, tx.Tx(), table); err != nil {
+				return nil, err
+			}
+			query := fmt.Sprintf("CREATE TABLE `%s.%s.%s` (id INT64)", projectID, datasetID, tableID)
+			if _, err := tx.Tx().ExecContext(ctx, query); err != nil {
+				return nil, fmt.Errorf("failed to create table %s: %w", query, err)
+			}
+
+			job.Configuration.Query.DestinationTable = &bigqueryv2.TableReference{
+				ProjectId: projectID,
+				DatasetId: datasetID,
+				TableId:   tableID,
 			}
 		}
 	}
@@ -1553,13 +1596,19 @@ func addTableMetadata(ctx context.Context, server *Server, spec *zetasqlite.Tabl
 		return err
 	}
 	defer tx.RollbackIfNotCommitted()
+
+	var tableSchema *bigqueryv2.TableSchema = nil
+	if fields != nil && len(fields) > 0 {
+		tableSchema = &bigqueryv2.TableSchema{Fields: fields}
+	}
+
 	if _, err := createTableMetadata(ctx, tx, server, project, dataset, &bigqueryv2.Table{
 		TableReference: &bigqueryv2.TableReference{
 			ProjectId: projectID,
 			DatasetId: datasetID,
 			TableId:   tableID,
 		},
-		Schema: &bigqueryv2.TableSchema{Fields: fields},
+		Schema: tableSchema,
 	}); err != nil {
 		return err
 	}
@@ -1643,10 +1692,10 @@ func (h *jobsInsertHandler) addQueryResultToDynamicDestinationTable(ctx context.
 		return fmt.Errorf("failed to add table data: %w", err)
 	}
 	r.job.Configuration.Query.DestinationTable = &bigqueryv2.TableReference{
-    		DatasetId: datasetID,
-    		ProjectId: projectID,
-    		TableId:   tableID,
-    	}
+		DatasetId: datasetID,
+		ProjectId: projectID,
+		TableId:   tableID,
+	}
 	return nil
 }
 

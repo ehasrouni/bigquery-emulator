@@ -243,10 +243,14 @@ func (r *Repository) Query(ctx context.Context, tx *connection.Tx, projectID, da
 		return nil, fmt.Errorf("failed to scan rows: %w", err)
 	}
 	logger.Logger(ctx).Debug("query result", zap.Any("rows", result))
+
+	var tableSchema *bigqueryv2.TableSchema = nil
+	if fields != nil && len(fields) > 0 {
+		tableSchema = &bigqueryv2.TableSchema{Fields: fields}
+	}
+
 	return &internaltypes.QueryResponse{
-		Schema: &bigqueryv2.TableSchema{
-			Fields: fields,
-		},
+		Schema:         tableSchema,
 		TotalRows:      uint64(len(tableRows)),
 		JobComplete:    true,
 		Rows:           tableRows,
